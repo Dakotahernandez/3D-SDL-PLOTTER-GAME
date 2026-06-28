@@ -6,7 +6,8 @@ you build a scene, pick a camera and a shading model, render into a plain
 32-bit ARGB pixel buffer, and present it however the game likes (SDL, OpenGL,
 Metal, an off-screen image, ...). An optional `SDLViewport` adapter is included
 for quick SDL integration.
-
+based off of my work in this repo 
+https://github.com/Dakotahernandez/c-_raytracing-rendering_using_SDL_PLOTTER
 ## Layout
 
 ```
