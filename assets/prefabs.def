@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# prefabs.def  -  "drop-in" designs for enemies, weapons and props
+# ---------------------------------------------------------------------------
+# Each line defines a named design as keyword/value pairs. Omitted keys keep
+# their defaults. Maps and the in-game editor place these by name, so adding a
+# new design here makes it immediately available without touching any code.
+#
+#   enemy  <name> material <m> radius <r> speed <s> hp <n>
+#   weapon <name> material <m> size <s> damage <n> label <text>
+#   prop   <name> shape <box|sphere> material <m> size <s>
+#
+# `material` refers to a name from materials.def.
+# ---------------------------------------------------------------------------
+
+# --- Enemies (rendered as shootable spheres; speed drifts them at you) ---
+enemy grunt   material enemy  radius 0.45 speed 1.4 hp 1
+enemy brute   material enemy2 radius 0.70 speed 0.8 hp 3
+enemy sniper  material chrome radius 0.40 speed 0.0 hp 1
+
+# --- Weapons (rendered as pickup boxes) ---
+weapon pistol  material weapon size 0.30 damage 1 label Pistol
+weapon shotgun material weapon size 0.45 damage 3 label Shotgun
+
+# --- Props (static set dressing; boxes also collide) ---
+prop crate    shape box    material crate  size 1.0
+prop barrel   shape sphere material accent size 1.0
+prop pillar   shape box    material mirror size 1.2
+prop orb      shape sphere material chrome size 0.8

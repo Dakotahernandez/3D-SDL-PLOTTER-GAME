@@ -10,6 +10,8 @@ struct HitRecord {
     Vec3     point;     // world-space hit position
     Vec3     normal;    // unit surface normal at the hit (faces the ray)
     double   t = 0.0;   // ray parameter at the hit
+    double   u = 0.0;   // surface texture coordinate
+    double   v = 0.0;   // surface texture coordinate
     Material material;   // surface material at the hit point
 };
 

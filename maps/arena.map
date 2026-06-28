@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# arena.map  -  default level. Edit by hand or in-game (F1, then F5 to save).
+# ---------------------------------------------------------------------------
+# Statements (see game/Map.h for the full grammar):
+#   spawn x y z yawDegrees | ambient v | floor <mat>|none
+#   ceiling <height> <mat>|none | light point ... | light dir ...
+#   wall minx miny minz maxx maxy maxz <mat>
+#   box cx cy cz size <mat> | sphere cx cy cz radius <mat>
+#   enemy <type> x y z | weapon <type> x y z | prop <type> x y z
+# ---------------------------------------------------------------------------
+
+spawn 0 1.2 6 0
+ambient 0.12
+floor floor
+ceiling 3 ceiling
+
+# Lighting: warm key overhead + cool directional fill.
+light point 0 2.8 0 1.0 0.95 0.85 2.2 0.01
+light dir -0.4 -1 -0.3 0.35 0.4 0.55 0.5
+
+# Perimeter walls (textured brick), 0.4 thick, arena spans [-8,8].
+wall -8.4 0 -8.4  -8.0 3 8.4  brick
+wall  8.0 0 -8.4   8.4 3 8.4  brick
+wall -8.4 0 -8.4   8.4 3 -8.0 brick
+wall -8.4 0  8.0   8.4 3 8.4  brick
+
+# Mirrored corner pillars.
+prop pillar -3.5 0.6 -3.5
+prop pillar  3.5 0.6 -3.5
+prop pillar -3.5 0.6  3.5
+prop pillar  3.5 0.6  3.5
+
+# Some set dressing.
+prop crate -1.5 0.5 -2.0
+prop crate  1.8 0.5 -1.0
+prop orb    0.0 1.2 -5.5
+
+# A PNG-textured pillar (drop your own .png into assets/textures/).
+box -6.0 1.0 -2.0 2.0 metal
+
+# A weapon pickup.
+weapon shotgun 0 0.6 2.5
+
+# Enemies to clear.
+enemy grunt  -4.0 1.0 -4.0
+enemy grunt   4.0 1.0 -4.0
+enemy grunt  -2.0 1.0 -6.0
+enemy brute   0.0 1.2 -6.5
+enemy sniper  5.5 1.0  3.0
+enemy sniper -5.5 1.0  3.0

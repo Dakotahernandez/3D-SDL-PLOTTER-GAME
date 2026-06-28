@@ -14,12 +14,18 @@ endif()
 add_library(raytracer STATIC
     src/RayTracer.cpp
     src/Sphere.cpp
+    src/ImageIO.cpp
 )
 
 # Consumers include either <raytracer/RayTracer.h> or the flat headers.
 target_include_directories(raytracer PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/include/raytracer
+)
+
+# Vendored single-header image decoder (PNG/JPG/...), used only by ImageIO.cpp.
+target_include_directories(raytracer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party
 )
 
 # Renderer uses std::thread.
@@ -43,6 +49,20 @@ if(SDL2_FOUND)
         target_link_libraries(raytracer_demo PRIVATE SDL2::SDL2)
     endif()
     message(STATUS "SDL2 found: building raytracer_demo")
+
+    # The ray-traced FPS game.
+    add_executable(fps_game game/main.cpp)
+    target_link_libraries(fps_game PRIVATE raytracer ${SDL2_LIBRARIES})
+    target_include_directories(fps_game PRIVATE
+        ${SDL2_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_SOURCE_DIR}/game)
+    # Let the game find its assets/ and maps/ regardless of the working dir.
+    target_compile_definitions(fps_game PRIVATE
+        PROJECT_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(TARGET SDL2::SDL2)
+        target_link_libraries(fps_game PRIVATE SDL2::SDL2)
+    endif()
+    message(STATUS "SDL2 found: building fps_game")
 else()
     message(STATUS "SDL2 not found: skipping raytracer_demo (core library still builds)")
 endif()

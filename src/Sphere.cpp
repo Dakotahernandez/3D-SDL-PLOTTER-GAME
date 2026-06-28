@@ -28,6 +28,13 @@ bool Sphere::hit(const Ray& r, double t_min, double t_max,
     // Flip the normal so it always faces against the incoming ray
     // (lets us shade the inside of a sphere correctly too).
     rec.normal = (dot(r.dir, outward) < 0.0) ? outward : -outward;
+
+    // Spherical texture coordinates in [0,1] from the outward normal.
+    double theta = std::acos(std::min(1.0, std::max(-1.0, -outward.y)));
+    double phi   = std::atan2(-outward.z, outward.x) + M_PI;
+    rec.u = phi / (2.0 * M_PI);
+    rec.v = theta / M_PI;
+
     rec.material = material;
     return true;
 }

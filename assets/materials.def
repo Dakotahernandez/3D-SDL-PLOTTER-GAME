@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# materials.def  -  named surface "looks" referenced by maps and prefabs
+# ---------------------------------------------------------------------------
+# One statement per line. '#' starts a comment. <finish> is matte|glossy|mirror.
+#
+#   material <name> color    <r> <g> <b> <finish>
+#   material <name> checker  <r1> <g1> <b1> <r2> <g2> <b2> <tile> <finish>
+#   material <name> gradient <r1> <g1> <b1> <r2> <g2> <b2> <y0> <y1> <finish>
+#   material <name> image    <file.ppm> <scale> <finish>
+#
+# Colors are 0..1. `tile`/`scale` control how often the pattern repeats per
+# world unit. Image paths are relative to this assets/ folder. To author a
+# texture: export any image as binary PPM (P6), e.g. `convert wall.png wall.ppm`.
+# ---------------------------------------------------------------------------
+
+# --- Environment ---
+material floor    checker 0.82 0.82 0.86  0.16 0.17 0.22  1.0 matte
+material ceiling  color   0.30 0.30 0.35  matte
+material brick    image   textures/brick.ppm   1.0 matte
+material panel    image   textures/panel.ppm   1.0 glossy
+material metal    image   textures/metal.png   1.0 glossy
+material wall     color   0.45 0.50 0.62  glossy
+material accent   gradient 0.10 0.30 0.55  0.85 0.35 0.15  0.0 3.0 glossy
+
+# --- Reflective set dressing ---
+material mirror   color   0.90 0.90 0.95  mirror
+material chrome   color   0.80 0.85 0.95  mirror
+
+# --- Gameplay materials ---
+material enemy    color   1.00 0.45 0.12  glossy
+material enemy2   color   0.30 0.90 0.55  glossy
+material weapon   color   0.95 0.85 0.25  glossy
+material crate    image   textures/crate.ppm   1.0 matte

@@ -55,6 +55,13 @@ public:
         else if (hitAxis == 1) n = Vec3(0, sign, 0);
         else n = Vec3(0, 0, sign);
         rec.normal = n;
+
+        // Per-face texture coordinates (world units along the two in-plane
+        // axes) so wall/box textures tile consistently across faces.
+        if (hitAxis == 0)      { rec.u = rec.point.z; rec.v = rec.point.y; }
+        else if (hitAxis == 1) { rec.u = rec.point.x; rec.v = rec.point.z; }
+        else                   { rec.u = rec.point.x; rec.v = rec.point.y; }
+
         rec.material = material;
         return true;
     }

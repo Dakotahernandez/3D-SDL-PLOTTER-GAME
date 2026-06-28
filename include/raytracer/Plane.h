@@ -37,6 +37,10 @@ public:
         // Always return a normal facing back toward the incoming ray.
         rec.normal = (denom < 0.0) ? normal : -normal;
 
+        // Texture coordinates in world units along the plane (X/Z for a floor).
+        rec.u = rec.point.x;
+        rec.v = rec.point.z;
+
         rec.material = material;
         if (checker) {
             int ix = static_cast<int>(std::floor(rec.point.x / tileSize));

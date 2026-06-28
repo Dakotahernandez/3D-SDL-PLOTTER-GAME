@@ -33,7 +33,10 @@ public:
         const Material& m = rec.material;
         const double kInf = std::numeric_limits<double>::infinity();
 
-        Color result = scene.ambient * m.albedo;
+        // Base color may come from a texture (tinted by albedo) or be flat.
+        Color base = m.baseColor(rec.u, rec.v, rec.point);
+
+        Color result = scene.ambient * base;
         Vec3 viewDir = unit_vector(-r.dir);
 
         for (const auto& light : scene.lights) {
@@ -46,7 +49,7 @@ public:
 
             // Diffuse (Lambert).
             double diff = std::max(0.0, dot(rec.normal, ls.direction));
-            Color diffuse = m.diffuse * diff * (m.albedo * ls.radiance);
+            Color diffuse = m.diffuse * diff * (base * ls.radiance);
 
             // Specular (Blinn-Phong half vector).
             Vec3 half = unit_vector(ls.direction + viewDir);
@@ -80,12 +83,12 @@ public:
     }
 };
 
-// Flat/unlit shader: just the material albedo. Cheap and useful as a fallback.
+// Flat/unlit shader: just the material base color. Cheap and texture-aware.
 class FlatShader : public Shader {
 public:
     Color shade(const Ray&, const HitRecord& rec,
                 const Scene&, int, const RayCaster&) const override {
-        return rec.material.albedo;
+        return rec.material.baseColor(rec.u, rec.v, rec.point);
     }
 };
 
