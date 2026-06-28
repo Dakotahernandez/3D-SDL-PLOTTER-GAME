@@ -1,0 +1,14 @@
+# Build outputs
+build/
+cmake-build-*/
+*.o
+*.a
+*.out
+
+# macOS
+.DS_Store
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+DerivedData/
