@@ -98,9 +98,9 @@ struct Map {
                     ceilingHeight = num(t[1]);
                     ceilingMaterial = t[2];
                 }
-            } else if (cmd == "light" && t.size() >= 2 && t[1] == "point" && t.size() >= 11) {
+            } else if (cmd == "light" && t.size() >= 2 && t[1] == "point" && t.size() >= 10) {
                 pointLights.push_back({vec(t, 2), color(t, 5), num(t[8]), num(t[9])});
-            } else if (cmd == "light" && t.size() >= 2 && t[1] == "dir" && t.size() >= 10) {
+            } else if (cmd == "light" && t.size() >= 2 && t[1] == "dir" && t.size() >= 9) {
                 dirLights.push_back({vec(t, 2), color(t, 5), num(t[8])});
             } else if (cmd == "wall" && t.size() >= 8) {
                 walls.push_back({vec(t, 1), vec(t, 4), t[7]});

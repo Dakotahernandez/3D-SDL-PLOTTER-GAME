@@ -1,28 +1,23 @@
 // ---------------------------------------------------------------------------
-// 3D-SDL-PLOTTER-GAME  ::  ray-traced FPS + in-game level editor
+// 3D-SDL-PLOTTER-GAME  ::  fps_game  (the main app)
 // ---------------------------------------------------------------------------
-// A real-time first-person shooter rendered entirely with the SDL-free ray
-// tracing library in this repo, plus a built-in map editor and a fully
-// data-driven content pipeline:
+// Boots into a level-select MENU that lists every maps/*.map, then PLAYS the
+// chosen level. Levels are built in the separate `level_editor` dev view and
+// saved as .map files; this app loads and plays them. Everything is rendered
+// with the SDL-free ray tracer.
 //
-//   assets/materials.def  -> surface looks (colors, textures, finishes)
-//   assets/prefabs.def     -> enemy / weapon / prop "designs"
-//   maps/*.map             -> levels that reference those names
+//   States:
+//     MENU  - pick a level (mouse or up/down + Enter), Esc quits
+//     PLAY  - WASD move, mouse look, LMB shoot enemies; clear them all to win
+//             R resets, M / Esc returns to the menu
 //
-// Press F1 to flip between PLAY and EDIT. In edit mode you fly around and drop
-// in walls, props, enemies, weapons and lights using a brush built from the
-// asset library, then F5 to save the map back to disk. Nothing here is
-// hard-coded: add a material or a prefab to a .def file and it becomes
-// placeable immediately.
-//
-//   fps_game [path/to/level.map]
+//   fps_game [path/to/level.map]      # skip the menu and play one level
 // ---------------------------------------------------------------------------
 
 #include <SDL2/SDL.h>
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -36,8 +31,9 @@
 #include <raytracer/Shader.h>
 
 #include "Assets.h"
-#include "Editor.h"
+#include "LevelBrowser.h"
 #include "Map.h"
+#include "Overlay.h"
 #include "Player.h"
 #include "World.h"
 
@@ -47,73 +43,110 @@
 
 namespace {
 
-// Window size (what you see) vs render size (what we ray trace). The renderer
-// fills the smaller buffer and SDL upscales it, which is what keeps a
-// per-pixel ray traced game interactive.
-constexpr int kWindowW = 960;
-constexpr int kWindowH = 540;
-constexpr int kRenderW = 480;
-constexpr int kRenderH = 270;
-
+constexpr int kWindowW = 1024;
+constexpr int kWindowH = 576;
+constexpr int kRenderW = 512;
+constexpr int kRenderH = 288;
 constexpr double kEyeHeight = 1.2;
 
-// Nearest live enemy hit by `ray`, or nullptr. Uses the same analytic
-// ray-sphere test the renderer uses but only against enemies, so we know which
-// one was struck (the renderer's HitRecord does not expose the object).
+enum class State { Menu, Play };
+
 LiveEnemy* pickEnemy(const Ray& ray, std::vector<LiveEnemy>& enemies) {
     LiveEnemy* best = nullptr;
     double bestT = std::numeric_limits<double>::infinity();
     HitRecord rec;
     for (auto& e : enemies) {
         if (!e.alive) continue;
-        if (e.sphere->hit(ray, 0.001, bestT, rec)) {
-            bestT = rec.t;
-            best = &e;
-        }
+        if (e.sphere->hit(ray, 0.001, bestT, rec)) { bestT = rec.t; best = &e; }
     }
     return best;
 }
 
-void drawCrosshair(SDLViewport& viewport, bool editMode) {
-    SDL_Renderer* r = viewport.renderer();
-    int cx = viewport.windowWidth()  / 2;
-    int cy = viewport.windowHeight() / 2;
-    const int arm = 10, gap = 4;
-    if (editMode) SDL_SetRenderDrawColor(r, 120, 230, 120, 230);   // green = edit
-    else          SDL_SetRenderDrawColor(r, 255, 255, 255, 220);
-    SDL_RenderDrawLine(r, cx - arm, cy, cx - gap, cy);
-    SDL_RenderDrawLine(r, cx + gap, cy, cx + arm, cy);
-    SDL_RenderDrawLine(r, cx, cy - arm, cx, cy - gap);
-    SDL_RenderDrawLine(r, cx, cy + gap, cx, cy + arm);
+void drawPlayHUD(SDL_Renderer* r, int score, int remaining, int total, double fps) {
+    ui::panel(r, 12, 12, 260, 56, ui::theme::panelDark());
+    ui::text(r, 22, 20, "SCORE " + std::to_string(score), ui::theme::text(), 2);
+    ui::text(r, 22, 40, "ENEMIES " + std::to_string(remaining), ui::theme::text(), 2);
+    if (total > 0 && remaining == 0)
+        ui::text(r, 22, 56, "LEVEL CLEARED - M FOR MENU", ui::theme::good(), 1);
+    else
+        ui::text(r, 22, 56, "WASD MOVE  LMB SHOOT  M MENU  R RESET", ui::theme::textDim(), 1);
+
+    std::string f = std::to_string(int(fps + 0.5)) + " FPS";
+    ui::text(r, 1024 - ui::textWidth(f, 2) - 16, 18, f, ui::theme::textDim(), 2);
+
+    int cx = 1024 / 2, cy = 576 / 2, a = 10, g = 4;
+    ui::setColor(r, ui::rgb(255, 255, 255, 220));
+    SDL_RenderDrawLine(r, cx - a, cy, cx - g, cy);
+    SDL_RenderDrawLine(r, cx + g, cy, cx + a, cy);
+    SDL_RenderDrawLine(r, cx, cy - a, cx, cy - g);
+    SDL_RenderDrawLine(r, cx, cy + g, cx, cy + a);
+}
+
+// Draws the menu and returns the hovered/clicked level index under the cursor,
+// or -1. `keyboardIndex` is highlighted too (for up/down navigation).
+int drawMenu(SDL_Renderer* r, const std::vector<LevelEntry>& levels,
+             int keyboardIndex, int mx, int my) {
+    ui::fillRect(r, 0, 0, kWindowW, kWindowH, ui::theme::panelDark());
+
+    // Title.
+    ui::text(r, kWindowW / 2 - ui::textWidth("RAY-TRACED FPS", 4) / 2, 60,
+             "RAY-TRACED FPS", ui::theme::accent(), 4);
+    ui::text(r, kWindowW / 2 - ui::textWidth("SELECT A LEVEL", 2) / 2, 110,
+             "SELECT A LEVEL", ui::theme::textDim(), 2);
+
+    int clicked = -1;
+    int listX = kWindowW / 2 - 220;
+    int listY = 160;
+    int rowW = 440, rowH = 40, gap = 10;
+
+    if (levels.empty()) {
+        ui::text(r, kWindowW / 2 - ui::textWidth("NO MAPS FOUND", 2) / 2, 240,
+                 "NO MAPS FOUND", ui::theme::warn(), 2);
+        ui::text(r, kWindowW / 2 - ui::textWidth("BUILD ONE IN LEVEL_EDITOR", 1) / 2, 270,
+                 "BUILD ONE IN LEVEL_EDITOR", ui::theme::textDim(), 1);
+    }
+
+    for (size_t i = 0; i < levels.size(); ++i) {
+        int y = listY + int(i) * (rowH + gap);
+        ui::Rect b{listX, y, rowW, rowH};
+        bool hover = b.contains(mx, my);
+        bool active = (int(i) == keyboardIndex) || hover;
+        ui::panel(r, b.x, b.y, b.w, b.h, active ? ui::theme::accent() : ui::theme::panel());
+        ui::Color tc = active ? ui::rgb(15, 18, 24) : ui::theme::text();
+        ui::text(r, b.x + 16, b.y + (rowH - ui::lineHeight(2)) / 2 + 1,
+                 levels[i].name, tc, 2);
+        std::string play = "PLAY >";
+        ui::text(r, b.x + rowW - ui::textWidth(play, 2) - 14,
+                 b.y + (rowH - ui::lineHeight(2)) / 2 + 1, play,
+                 active ? ui::rgb(15,18,24) : ui::theme::textDim(), 2);
+        if (hover) clicked = int(i);
+    }
+
+    ui::text(r, kWindowW / 2 - ui::textWidth("UP/DOWN + ENTER   OR CLICK   -   ESC QUITS", 1) / 2,
+             kWindowH - 36, "UP/DOWN + ENTER   OR CLICK   -   ESC QUITS",
+             ui::theme::textDim(), 1);
+    return clicked;
 }
 
 } // namespace
 
 int main(int argc, char* argv[]) {
-    // ----- Resolve content paths ------------------------------------------
     const std::string root = PROJECT_ROOT;
     const std::string assetsDir = root + "/assets";
-    std::string mapPath = (argc > 1) ? argv[1] : (root + "/maps/arena.map");
+    const std::string mapsDir   = root + "/maps";
 
-    // ----- Load the data-driven content -----------------------------------
     AssetLibrary assets;
     assets.baseDir = assetsDir;
     assets.loadMaterials(assetsDir + "/materials.def");
     assets.loadPrefabs(assetsDir + "/prefabs.def");
 
-    Map map;
-    if (!map.load(mapPath)) {
-        std::cerr << "[game] starting from an empty map (" << mapPath << ")\n";
-    }
-
-    // ----- SDL + renderer --------------------------------------------------
-    SDLViewport viewport("Ray-Traced FPS + Editor", kWindowW, kWindowH,
-                         kRenderW, kRenderH);
+    SDLViewport viewport("Ray-Traced FPS", kWindowW, kWindowH, kRenderW, kRenderH);
     if (!viewport.valid()) {
         std::cerr << "Failed to create SDL viewport: " << SDL_GetError() << "\n";
         return 1;
     }
     std::vector<uint32_t> pixels(size_t(kRenderW) * kRenderH);
+    SDL_Renderer* gpu = viewport.renderer();
 
     Renderer tracer(kRenderW, kRenderH);
     auto fpsCam = std::make_shared<PerspectiveCamera>(
@@ -123,182 +156,155 @@ int main(int argc, char* argv[]) {
     tracer.maxDepth = 3;
     tracer.samples  = 1;
 
-    World world = instantiate(map, assets, tracer);
+    std::vector<LevelEntry> levels = scanLevels(mapsDir);
 
-    Player player(world.spawn, world.spawnYaw, 0.0);
-    Editor editor(assets);
+    Map   map;
+    World world;
+    Player player(Vec3(0, kEyeHeight, 6), 0, 0);
+    int score = 0, remaining = 0;
 
-    bool editMode = false;
-    int  score    = 0;
-    int  remaining = world.enemyCount;
-
-    SDL_SetRelativeMouseMode(SDL_TRUE);
-
-    auto rebuildWorld = [&]() {
+    auto loadAndStart = [&](const std::string& path) {
+        if (!map.load(path)) std::cerr << "[game] failed to load " << path << "\n";
         world = instantiate(map, assets, tracer);
         remaining = world.enemyCount;
+        player = Player(map.spawn, map.spawnYaw, 0.0);
+        tracer.camera = fpsCam;
     };
 
+    // Start in the menu, unless a level was passed on the command line.
+    State state = State::Menu;
+    int   hoverIndex = 0;
+    if (argc > 1) { loadAndStart(argv[1]); state = State::Play;
+                    SDL_SetRelativeMouseMode(SDL_TRUE); }
+
+    int  mouseX = kWindowW / 2, mouseY = kWindowH / 2;
+    bool menuClick = false;
     Uint64 prev = SDL_GetPerformanceCounter();
     const double freq = double(SDL_GetPerformanceFrequency());
 
-    auto updateTitle = [&](double fps) {
-        std::string s;
-        if (editMode) {
-            s  = "EDIT  |  brush: " + editor.categoryName() + " / " + editor.itemName();
-            s += editor.snapping() ? "  [grid]" : "  [free]";
-            s += "  |  LMB place  RMB delete  [ ] category  , . item  G grid"
-                 "  F5 save  F9 reload  F1 play";
-        } else {
-            s  = "PLAY  |  score " + std::to_string(score);
-            s += "  |  enemies left " + std::to_string(remaining);
-            if (remaining == 0 && world.enemyCount > 0) s += "   *** CLEARED ***";
-            s += "  |  " + std::to_string(int(fps + 0.5)) + " fps";
-            s += "   [WASD move  mouse look  LMB shoot  F1 edit  Esc quit]";
-        }
-        viewport.setTitle(s.c_str());
+    auto gotoMenu = [&]() {
+        state = State::Menu;
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+        levels = scanLevels(mapsDir);   // pick up anything saved in the editor
+    };
+    auto startLevel = [&](int idx) {
+        if (idx < 0 || idx >= int(levels.size())) return;
+        loadAndStart(levels[idx].path);
+        state = State::Play;
+        score = 0;
+        SDL_SetRelativeMouseMode(SDL_TRUE);
     };
 
     bool quit = false;
     while (!quit) {
-        // ----- Timing ------------------------------------------------------
         Uint64 now = SDL_GetPerformanceCounter();
-        double dt  = double(now - prev) / freq;
+        double dt = double(now - prev) / freq;
         prev = now;
         if (dt > 0.1) dt = 0.1;
 
-        // ----- Input -------------------------------------------------------
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
-            switch (e.type) {
-                case SDL_QUIT:
-                    quit = true;
-                    break;
+            if (e.type == SDL_QUIT) { quit = true; break; }
 
-                case SDL_MOUSEMOTION:
-                    player.addLook(e.motion.xrel, e.motion.yrel);
-                    break;
-
-                case SDL_MOUSEWHEEL:
-                    if (editMode) {
-                        if (SDL_GetModState() & KMOD_SHIFT)
-                            editor.adjustHeight(e.wheel.y * 0.25);
-                        else
-                            editor.nextItem(e.wheel.y > 0 ? 1 : -1);
-                    }
-                    break;
-
-                case SDL_MOUSEBUTTONDOWN:
-                    if (editMode) {
-                        if (e.button.button == SDL_BUTTON_LEFT)
-                            editor.place(player.aimRay(), map);
-                        else if (e.button.button == SDL_BUTTON_RIGHT)
-                            editor.deleteNearest(player.aimRay(), map);
-                        if (editor.dirty) { rebuildWorld(); editor.dirty = false; }
-                    } else if (e.button.button == SDL_BUTTON_LEFT) {
-                        if (LiveEnemy* hit = pickEnemy(player.aimRay(), world.enemies)) {
-                            if (--hit->hp <= 0) {
-                                hit->alive = false;
-                                auto& objs = tracer.scene.objects;
-                                objs.erase(std::remove(objs.begin(), objs.end(),
-                                    std::static_pointer_cast<Hittable>(hit->sphere)),
-                                    objs.end());
-                                ++score;
-                                --remaining;
+            if (state == State::Menu) {
+                switch (e.type) {
+                    case SDL_MOUSEMOTION:
+                        mouseX = e.motion.x; mouseY = e.motion.y; break;
+                    case SDL_MOUSEBUTTONDOWN:
+                        if (e.button.button == SDL_BUTTON_LEFT) {
+                            // The clicked index is computed during draw; store
+                            // the click and let the draw pass resolve it.
+                            menuClick = true;
+                        }
+                        break;
+                    case SDL_KEYDOWN:
+                        switch (e.key.keysym.sym) {
+                            case SDLK_ESCAPE: quit = true; break;
+                            case SDLK_UP:
+                                if (!levels.empty())
+                                    hoverIndex = (hoverIndex - 1 + int(levels.size())) % int(levels.size());
+                                break;
+                            case SDLK_DOWN:
+                                if (!levels.empty())
+                                    hoverIndex = (hoverIndex + 1) % int(levels.size());
+                                break;
+                            case SDLK_RETURN: case SDLK_KP_ENTER:
+                                startLevel(hoverIndex); break;
+                            case SDLK_r:
+                                levels = scanLevels(mapsDir); break;
+                            default: break;
+                        }
+                        break;
+                    default: break;
+                }
+            } else { // Play
+                switch (e.type) {
+                    case SDL_MOUSEMOTION:
+                        player.addLook(e.motion.xrel, e.motion.yrel); break;
+                    case SDL_MOUSEBUTTONDOWN:
+                        if (e.button.button == SDL_BUTTON_LEFT) {
+                            if (LiveEnemy* hit = pickEnemy(player.aimRay(), world.enemies)) {
+                                if (--hit->hp <= 0) {
+                                    hit->alive = false;
+                                    auto& o = tracer.scene.objects;
+                                    o.erase(std::remove(o.begin(), o.end(),
+                                        std::static_pointer_cast<Hittable>(hit->sphere)), o.end());
+                                    ++score; --remaining;
+                                }
                             }
                         }
-                    }
-                    break;
-
-                case SDL_KEYDOWN:
-                    switch (e.key.keysym.sym) {
-                        case SDLK_ESCAPE:
-                            quit = true;
-                            break;
-
-                        case SDLK_F1:
-                            editMode = !editMode;
-                            if (!editMode) {                 // back to play
-                                player.position = world.spawn;
-                                player.position.y = kEyeHeight;
-                            }
-                            break;
-
-                        // ----- Editor controls -----
-                        case SDLK_LEFTBRACKET:  if (editMode) editor.nextCategory(-1); break;
-                        case SDLK_RIGHTBRACKET: if (editMode) editor.nextCategory(+1); break;
-                        case SDLK_COMMA:        if (editMode) editor.nextItem(-1); break;
-                        case SDLK_PERIOD:       if (editMode) editor.nextItem(+1); break;
-                        case SDLK_g:            if (editMode) editor.toggleSnap(); break;
-                        case SDLK_F5:
-                            if (editMode && map.save(mapPath))
-                                std::cout << "[game] map saved\n";
-                            break;
-                        case SDLK_F9:
-                            if (editMode && map.load(mapPath)) rebuildWorld();
-                            break;
-
-                        // ----- Play controls -----
-                        case SDLK_r:
-                            if (!editMode) {
-                                rebuildWorld();
+                        break;
+                    case SDL_KEYDOWN:
+                        switch (e.key.keysym.sym) {
+                            case SDLK_ESCAPE: case SDLK_m: gotoMenu(); break;
+                            case SDLK_r:
+                                world = instantiate(map, assets, tracer);
+                                remaining = world.enemyCount;
+                                player = Player(map.spawn, map.spawnYaw, 0.0);
                                 score = 0;
-                                player.position = world.spawn;
-                                player.position.y = kEyeHeight;
-                            }
-                            break;
-                        default:
-                            break;
-                    }
-                    break;
-
-                default:
-                    break;
+                                break;
+                            default: break;
+                        }
+                        break;
+                    default: break;
+                }
             }
         }
 
-        // ----- Movement ----------------------------------------------------
-        const Uint8* keys = SDL_GetKeyboardState(nullptr);
-        Vec3 move(0, 0, 0);
-        if (keys[SDL_SCANCODE_W]) move += player.forwardFlat();
-        if (keys[SDL_SCANCODE_S]) move += -player.forwardFlat();
-        if (keys[SDL_SCANCODE_D]) move += player.right();
-        if (keys[SDL_SCANCODE_A]) move += -player.right();
-
-        if (editMode) {
-            // Free-fly: no collision, Q/E change altitude.
-            Vec3 fly = move;
-            if (keys[SDL_SCANCODE_E]) fly += Vec3(0, 1, 0);
-            if (keys[SDL_SCANCODE_Q]) fly += Vec3(0, -1, 0);
-            if (fly.length_squared() > 1e-9)
-                player.position += unit_vector(fly) * (player.moveSpeed * 1.6 * dt);
+        // ----- update + render --------------------------------------------
+        if (state == State::Menu) {
+            // Render a dim ray-traced backdrop if a level is loaded; else flat.
+            ui::fillRect(gpu, 0, 0, kWindowW, kWindowH, ui::theme::panelDark());
+            // (We draw the menu directly with the GPU renderer; no 3D needed.)
+            SDL_RenderClear(gpu);
+            int clicked = drawMenu(gpu, levels, hoverIndex, mouseX, mouseY);
+            if (menuClick) { if (clicked >= 0) startLevel(clicked); menuClick = false; }
+            SDL_RenderPresent(gpu);
         } else {
+            const Uint8* keys = SDL_GetKeyboardState(nullptr);
+            Vec3 move(0, 0, 0);
+            if (keys[SDL_SCANCODE_W]) move += player.forwardFlat();
+            if (keys[SDL_SCANCODE_S]) move += -player.forwardFlat();
+            if (keys[SDL_SCANCODE_D]) move += player.right();
+            if (keys[SDL_SCANCODE_A]) move += -player.right();
             if (move.length_squared() > 1e-9) {
                 move = unit_vector(move) * (player.moveSpeed * dt);
                 moveWithCollision(player, move, world.walls);
             }
             player.position.y = kEyeHeight;
-
-            // Enemies drift toward the player on the ground plane.
             for (auto& en : world.enemies) {
                 if (!en.alive || en.speed <= 0.0) continue;
-                Vec3 to = player.position - en.sphere->center;
-                to.y = 0.0;
+                Vec3 to = player.position - en.sphere->center; to.y = 0.0;
                 double d = to.length();
-                if (d > 0.8) {
-                    en.sphere->center += (to / d) * (en.speed * dt);
-                }
+                if (d > 0.8) en.sphere->center += (to / d) * (en.speed * dt);
             }
+            player.applyToCamera(*fpsCam);
+
+            tracer.render(pixels.data());
+            viewport.beginFrame(pixels.data());
+            drawPlayHUD(gpu, score, remaining, world.enemyCount, dt > 0 ? 1.0 / dt : 0.0);
+            viewport.endFrame();
         }
-        player.applyToCamera(*fpsCam);
-
-        // ----- Render ------------------------------------------------------
-        tracer.render(pixels.data());
-        viewport.beginFrame(pixels.data());
-        drawCrosshair(viewport, editMode);
-        viewport.endFrame();
-
-        updateTitle(dt > 0.0 ? 1.0 / dt : 0.0);
     }
 
     SDL_SetRelativeMouseMode(SDL_FALSE);

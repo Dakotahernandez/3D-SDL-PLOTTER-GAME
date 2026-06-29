@@ -24,6 +24,25 @@
 #include "Map.h"
 #include "Player.h"   // for WallAABB
 
+// Selectable entry kinds, shared by the editor (selection / picking) and
+// instantiate() (which tints the selected entry so it glows in the viewport).
+namespace sel {
+enum Kind { None = -1, Wall = 0, Box = 1, Sphere = 2,
+            Prop = 3, Enemy = 4, Weapon = 5, Light = 6 };
+}
+
+// Make a material visibly "selected": a bright amber tint with a little extra
+// punch, so the highlighted object reads clearly under any lighting.
+inline Material highlightMaterial(Material m) {
+    m.texture = nullptr;
+    m.albedo = Color(1.0, 0.6, 0.12);
+    m.diffuse = 1.0;
+    m.specular = 0.6;
+    m.shininess = 64.0;
+    m.reflectivity = 0.0;
+    return m;
+}
+
 // A live, shootable enemy instance backed by a sphere in the scene.
 struct LiveEnemy {
     std::shared_ptr<Sphere> sphere;
@@ -43,7 +62,8 @@ struct World {
 };
 
 inline World instantiate(const Map& map, const AssetLibrary& assets,
-                         Renderer& tracer) {
+                         Renderer& tracer,
+                         int selKind = sel::None, int selIndex = -1) {
     World world;
     world.spawn    = map.spawn;
     world.spawnYaw = map.spawnYaw;
@@ -56,6 +76,9 @@ inline World instantiate(const Map& map, const AssetLibrary& assets,
         world.walls.push_back(WallAABB{
             std::fmin(a.x, b.x), std::fmax(a.x, b.x),
             std::fmin(a.z, b.z), std::fmax(a.z, b.z)});
+    };
+    auto pick = [&](int kind, int i, Material m) {
+        return (kind == selKind && i == selIndex) ? highlightMaterial(m) : m;
     };
 
     // Floor / ceiling.
@@ -70,32 +93,37 @@ inline World instantiate(const Map& map, const AssetLibrary& assets,
     }
 
     // Walls (boxes by min/max) — solid, so they collide.
-    for (const auto& w : map.walls) {
-        tracer.scene.add(std::make_shared<Box>(w.min, w.max,
-                                               assets.material(w.material)));
+    for (size_t i = 0; i < map.walls.size(); ++i) {
+        const auto& w = map.walls[i];
+        tracer.scene.add(std::make_shared<Box>(
+            w.min, w.max, pick(sel::Wall, int(i), assets.material(w.material))));
         pushAABB(w.min, w.max);
     }
 
     // Free-standing cubes — solid.
-    for (const auto& b : map.boxes) {
+    for (size_t i = 0; i < map.boxes.size(); ++i) {
+        const auto& b = map.boxes[i];
         Vec3 h(b.size * 0.5, b.size * 0.5, b.size * 0.5);
         Vec3 lo = b.center - h, hi = b.center + h;
-        tracer.scene.add(std::make_shared<Box>(lo, hi, assets.material(b.material)));
+        tracer.scene.add(std::make_shared<Box>(
+            lo, hi, pick(sel::Box, int(i), assets.material(b.material))));
         pushAABB(lo, hi);
     }
 
     // Decorative spheres — no collision.
-    for (const auto& s : map.spheres) {
+    for (size_t i = 0; i < map.spheres.size(); ++i) {
+        const auto& s = map.spheres[i];
         tracer.scene.add(std::make_shared<Sphere>(
-            s.center, s.radius, assets.material(s.material)));
+            s.center, s.radius, pick(sel::Sphere, int(i), assets.material(s.material))));
     }
 
     // Props from prefab designs.
-    for (const auto& p : map.props) {
+    for (size_t i = 0; i < map.props.size(); ++i) {
+        const auto& p = map.props[i];
         PropDef def;
         auto it = assets.props.find(p.type);
         if (it != assets.props.end()) def = it->second;
-        Material mat = assets.material(def.material);
+        Material mat = pick(sel::Prop, int(i), assets.material(def.material));
         if (def.shape == "sphere") {
             tracer.scene.add(std::make_shared<Sphere>(p.pos, def.size * 0.5, mat));
         } else {
@@ -107,22 +135,26 @@ inline World instantiate(const Map& map, const AssetLibrary& assets,
     }
 
     // Weapons render as a small floating box (a placeholder pickup model).
-    for (const auto& w : map.weapons) {
+    for (size_t i = 0; i < map.weapons.size(); ++i) {
+        const auto& w = map.weapons[i];
         WeaponDef def;
         auto it = assets.weapons.find(w.type);
         if (it != assets.weapons.end()) def = it->second;
         Vec3 h(def.size * 0.5, def.size * 0.5, def.size * 0.5);
         tracer.scene.add(std::make_shared<Box>(
-            w.pos - h, w.pos + h, assets.material(def.material)));
+            w.pos - h, w.pos + h,
+            pick(sel::Weapon, int(i), assets.material(def.material))));
     }
 
     // Enemies from prefab designs — shootable spheres.
-    for (const auto& e : map.enemies) {
+    for (size_t i = 0; i < map.enemies.size(); ++i) {
+        const auto& e = map.enemies[i];
         EnemyDef def;
         auto it = assets.enemies.find(e.type);
         if (it != assets.enemies.end()) def = it->second;
         auto sphere = std::make_shared<Sphere>(
-            e.pos, def.radius, assets.material(def.material));
+            e.pos, def.radius,
+            pick(sel::Enemy, int(i), assets.material(def.material)));
         tracer.scene.add(sphere);
         world.enemies.push_back(LiveEnemy{sphere, e.type, def.speed, def.hp, true});
     }

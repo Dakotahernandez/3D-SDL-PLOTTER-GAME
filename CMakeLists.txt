@@ -50,19 +50,33 @@ if(SDL2_FOUND)
     endif()
     message(STATUS "SDL2 found: building raytracer_demo")
 
-    # The ray-traced FPS game.
-    add_executable(fps_game game/main.cpp)
-    target_link_libraries(fps_game PRIVATE raytracer ${SDL2_LIBRARIES})
-    target_include_directories(fps_game PRIVATE
-        ${SDL2_INCLUDE_DIRS}
-        ${CMAKE_CURRENT_SOURCE_DIR}/game)
-    # Let the game find its assets/ and maps/ regardless of the working dir.
-    target_compile_definitions(fps_game PRIVATE
-        PROJECT_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
-    if(TARGET SDL2::SDL2)
-        target_link_libraries(fps_game PRIVATE SDL2::SDL2)
-    endif()
+    # Shared setup for the SDL apps (game + editor).
+    function(add_sdl_app name)
+        add_executable(${name} ${ARGN})
+        target_link_libraries(${name} PRIVATE raytracer ${SDL2_LIBRARIES})
+        target_include_directories(${name} PRIVATE
+            ${SDL2_INCLUDE_DIRS}
+            ${CMAKE_CURRENT_SOURCE_DIR}/game)
+        # Let the app find its assets/ and maps/ regardless of the working dir.
+        target_compile_definitions(${name} PRIVATE
+            PROJECT_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+        if(TARGET SDL2::SDL2)
+            target_link_libraries(${name} PRIVATE SDL2::SDL2)
+        endif()
+        # Some older GCC/Clang need an explicit lib for <filesystem>.
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+           CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9.0)
+            target_link_libraries(${name} PRIVATE stdc++fs)
+        endif()
+    endfunction()
+
+    # The ray-traced FPS game (level-select menu + play).
+    add_sdl_app(fps_game game/main.cpp)
     message(STATUS "SDL2 found: building fps_game")
+
+    # The level editor / dev view.
+    add_sdl_app(level_editor game/editor_main.cpp)
+    message(STATUS "SDL2 found: building level_editor")
 else()
-    message(STATUS "SDL2 not found: skipping raytracer_demo (core library still builds)")
+    message(STATUS "SDL2 not found: skipping SDL apps (core library still builds)")
 endif()

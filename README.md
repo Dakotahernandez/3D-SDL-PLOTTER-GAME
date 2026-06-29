@@ -27,9 +27,9 @@ include/raytracer/   Public headers (the library API)
   SDLViewport.h      Optional SDL window/texture adapter
 src/                 RayTracer.cpp, Sphere.cpp, ImageIO.cpp
 examples/            demo_main.cpp (interactive SDL demo)
-game/                Player.h Assets.h Map.h World.h Editor.h main.cpp
+game/                FPS game + level editor (see Dev tools)
 assets/              materials.def, prefabs.def, textures/*
-maps/                arena.map (default level)
+maps/                arena.map, tower.map (levels)
 third_party/         stb_image.h (vendored PNG/JPG/... decoder)
 ```
 
@@ -80,7 +80,8 @@ Requires CMake 3.15+, a C++17 compiler, and (for the demo) SDL2.
 cmake -S . -B build
 cmake --build build
 ./build/raytracer_demo      # if SDL2 was found
-./build/fps_game            # the ray-traced FPS game
+./build/fps_game            # the game: level-select menu + play
+./build/level_editor       # the dev view: build/edit levels
 ```
 
 The core `raytracer` static library builds even without SDL2. To use it from
@@ -95,24 +96,38 @@ target_link_libraries(my_game PRIVATE raytracer::raytracer)
 
 `game/main.cpp` is a small first-person shooter rendered **entirely** with the
 ray tracer — every pixel you see is a traced ray, including the mirror pillars'
-reflections. It demonstrates how to embed the library in a real-time loop:
+reflections. It boots into a **level-select menu** listing every `maps/*.map`,
+then plays the level you pick. Levels are authored in the separate
+**[level editor](#dev-tools-the-unreal-style-level-editor)** and saved as
+`.map` files, so building a level and playing it are the same content.
+
+The play loop embeds the library in real time:
 
 1. read input and update the `Player` (mouse look + WASD, with wall collision),
 2. push the player's pose onto the renderer's `PerspectiveCamera`,
 3. ray trace the scene into a low-res ARGB buffer, and
 4. upscale to the window and draw the crosshair + HUD.
 
-For interactivity the scene is traced at a reduced internal resolution
-(`480x270`) and the GPU upscales it to the `960x540` window — that split is
-handled by the optional `renderWidth/renderHeight` arguments now accepted by
-`SDLViewport`.
+For interactivity the scene is traced at a reduced internal resolution and the
+GPU upscales it to the window — that split is handled by the optional
+`renderWidth/renderHeight` arguments on `SDLViewport`. Everything in a level is
+loaded from data files (see **Dev tools** below) — nothing is hard-coded.
 
-Walk around the arena and shoot the enemies; clear them all to win. The score,
-enemies remaining, and current FPS show in the title bar. Everything in the
-level is loaded from data files (see **Dev tools** below) — nothing about the
-arena is hard-coded.
+```sh
+./build/fps_game                    # open the level-select menu
+./build/fps_game maps/tower.map     # skip the menu and play one level
+```
 
-### Game controls
+### Menu controls
+
+| Input            | Action                          |
+|------------------|---------------------------------|
+| Up / Down        | Highlight a level               |
+| `Enter` or click | Play the highlighted level      |
+| `R`              | Rescan `maps/` for new levels   |
+| `Esc`            | Quit                            |
+
+### Play controls
 
 | Input          | Action                                   |
 |----------------|------------------------------------------|
@@ -120,16 +135,65 @@ arena is hard-coded.
 | Mouse          | Look around                              |
 | Left click     | Shoot the enemy under the crosshair      |
 | `R`            | Reset the level and score                |
-| `F1`           | Toggle the **map editor**                |
-| `Esc`          | Quit                                     |
+| `M`            | Back to the level menu                   |
+| `Esc`          | Back to the level menu                   |
 
-Run a specific level with `./build/fps_game path/to/level.map` (defaults to
-`maps/arena.map`).
+## Dev tools: the Unreal-style level editor
 
-## Dev tools: textures, designs & the map editor
+`level_editor` is a standalone **dev view** for building the levels the game
+plays. The 3D viewport is the ray tracer itself, with editor chrome — a
+toolbar, a palette, an outliner and a details panel — drawn on top. It reads
+the same data-driven content as the game, so any material or prefab you add is
+immediately usable.
+
+```sh
+./build/level_editor                 # edit maps/arena.map
+./build/level_editor maps/tower.map  # edit a specific level
+```
+
+Navigation is Unreal-like: **hold the right mouse button to look**, `WASD` +
+`Q`/`E` to fly. The left mouse runs the active tool in the viewport, or clicks
+the panels. Press **`P`** at any time to **Play-In-Editor** (test the level as
+the real game), and `Esc` to drop back into the editor.
+
+### Editor workflow
+
+- **Tools** (`1` Select, `2` Place, `3` Delete, or the toolbar buttons).
+- **Place**: pick a *category* and *item* in the left palette, then click the
+  floor to drop it. The palette is built from your `.def` files.
+- **Select**: click an object (it glows amber and fills the Details panel).
+  Move it with the arrow keys, raise/lower with `PgUp`/`PgDn`, scale with
+  `-`/`=`, duplicate with `Ctrl+D`, remove with `Delete`.
+- **Outliner**: every placed object is listed on the left; click a row to
+  select it.
+- **Top-down view** (`T`): an orthographic plan view for laying out floor plans;
+  toggle grid snapping with `G`.
+- **Save** with `Ctrl+S` / `F5` (writes the `.map` back out), start a blank
+  level with `Ctrl+N`.
+
+| Input              | Action                                         |
+|--------------------|------------------------------------------------|
+| Right mouse (hold) | Look around                                    |
+| `W A S D` `Q`/`E`  | Fly (Q/E = down/up)                            |
+| `1` / `2` / `3`    | Select / Place / Delete tool                   |
+| `[` / `]`          | Cycle brush category                           |
+| `,` / `.` or wheel | Cycle item within the category                 |
+| Left click (view)  | Run the active tool (place/select/delete)      |
+| Arrows             | Move selection; `PgUp`/`PgDn` raise/lower      |
+| `-` / `=`          | Scale the selection                            |
+| `Ctrl+D` / `Delete`| Duplicate / delete the selection               |
+| `G`                | Toggle grid snapping                           |
+| `T`                | Toggle top-down orthographic view              |
+| `Shift`+wheel      | Raise / lower the placement height             |
+| `Ctrl+S` / `F5`    | Save the map                                    |
+| `Ctrl+N`           | New / clear map                                |
+| `P`                | Play-In-Editor (Esc returns)                    |
+| `Esc`              | Quit                                           |
+
+## Content pipeline: textures & designs
 
 The game is fully **data-driven** so you can build levels and drop in new
-content without recompiling. Three kinds of plain-text files drive everything:
+content without recompiling. These plain-text files drive everything:
 
 ```
 assets/materials.def   named surface looks (color / checker / gradient / image)
@@ -166,7 +230,7 @@ material chrome color    0.80 0.85 0.95  mirror
 ### Dropping in characters / enemies / weapons
 
 Define a design once in `prefabs.def` and reference it by name from any map or
-the editor — no code changes:
+the editor's palette — no code changes:
 
 ```
 enemy  brute  material enemy2 radius 0.70 speed 0.8 hp 3
@@ -174,37 +238,23 @@ weapon shotgun material weapon size 0.45 damage 3 label Shotgun
 prop   crate  shape box       material crate size 1.0
 ```
 
-### The in-game map editor
-
-Press `F1` to enter **EDIT** mode. You free-fly through the level and place
-content with a "brush" built automatically from your asset library, so anything
-you add to the `.def` files is immediately placeable. Hit `F5` to write the map
-back to disk in the same human-readable format you can also hand-edit.
-
-| Input            | Action                                            |
-|------------------|---------------------------------------------------|
-| `W A S D` `Q`/`E`| Fly (Q/E = down/up), mouse looks                  |
-| `[` / `]`        | Cycle brush **category** (wall/box/sphere/prop/enemy/weapon/light) |
-| `,` / `.` or wheel| Cycle the **item** within the category           |
-| Left click       | Place the current brush where the crosshair hits the floor |
-| Right click      | Delete the nearest placed entity                  |
-| `G`              | Toggle grid snapping                              |
-| `Shift`+wheel    | Raise / lower the placement height                |
-| `F5` / `F9`      | Save / reload the map                             |
-| `F1`             | Back to PLAY                                       |
-
 The map format (`maps/*.map`) is documented at the top of
 [game/Map.h](game/Map.h); the asset grammars are documented inside
 [assets/materials.def](assets/materials.def) and
 [assets/prefabs.def](assets/prefabs.def). Source layout:
 
 ```
-game/Player.h    FPS controller + collision
-game/Assets.h    material/texture + prefab loaders
-game/Map.h       level data + load/save
-game/World.h     instantiate a Map into renderer geometry + game state
-game/Editor.h    the in-game map editor
-game/main.cpp    glue: play loop + edit loop
+game/Player.h        FPS controller + collision
+game/Assets.h        material/texture + prefab loaders
+game/Map.h           level data + load/save
+game/World.h         instantiate a Map into renderer geometry + game state
+game/Editor.h        editor data model (tools, selection, transforms)
+game/EditorCamera.h  fly / top-down viewport camera + picking + projection
+game/EditorUI.h      editor panels (toolbar / palette / outliner / details)
+game/Overlay.h       tiny 2D UI layer (bitmap font, panels, buttons)
+game/LevelBrowser.h  scans maps/*.map for the menu
+game/main.cpp        the game: level-select menu + play
+game/editor_main.cpp the dev view: the level editor
 ```
 
 
