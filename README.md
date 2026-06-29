@@ -8,6 +8,19 @@ Metal, an off-screen image, ...). An optional `SDLViewport` adapter is included
 for quick SDL integration.
 based off of my work in this repo 
 https://github.com/Dakotahernandez/c-_raytracing-rendering_using_SDL_PLOTTER
+
+## 1: first iteration of game engine
+
+The first playable build: a ray-traced FPS arena with textured walls, mirror
+and glossy spheres, real-time reflections, shadows, an enemy/score HUD, and a
+level-select menu. Running ~44-66 FPS at the internal render resolution.
+
+![Arena: orange & mirror spheres, brick pillar](photos/Screenshot%202026-06-28%20at%208.33.10%E2%80%AFPM.png)
+![Close-up: glossy, green & mirror spheres](photos/Screenshot%202026-06-28%20at%208.33.32%E2%80%AFPM.png)
+![Mirror sphere reflecting the brick room](photos/Screenshot%202026-06-28%20at%208.33.45%E2%80%AFPM.png)
+![Tower room with crates and targets](photos/Screenshot%202026-06-28%20at%208.34.10%E2%80%AFPM.png)
+![Level one: single target in a clean room](photos/Screenshot%202026-06-28%20at%208.34.28%E2%80%AFPM.png)
+
 ## Layout
 
 ```

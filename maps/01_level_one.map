@@ -1,0 +1,24 @@
+# ---------------------------------------------------------------------------
+# 01_level_one.map  -  the base "does the engine work?" test level.
+# Minimal on purpose: a floor, four walls, one light, one enemy. Use it to
+# confirm rendering, movement, collision and shooting all work, then build
+# bigger levels in level_editor.
+# ---------------------------------------------------------------------------
+
+spawn 0 1.2 6 0
+ambient 0.18
+floor floor
+ceiling 3 ceiling
+
+# Single overhead light + a soft directional fill.
+light point 0 2.8 0 1.0 0.95 0.85 2.2 0.01
+light dir -0.4 -1 -0.3 0.35 0.4 0.55 0.5
+
+# Small enclosed room, [-6,6].
+wall -6.4 0 -6.4  -6.0 3 6.4  brick
+wall  6.0 0 -6.4   6.4 3 6.4  brick
+wall -6.4 0 -6.4   6.4 3 -6.0 brick
+wall -6.4 0  6.0   6.4 3 6.4  brick
+
+# One target to shoot, dead ahead.
+enemy grunt 0 1 -3
